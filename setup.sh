@@ -176,10 +176,31 @@ mask_key() {
     echo "${prefix}******"
 }
 
+validate_anthropic_key() {
+    local key="$1"
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+        "https://api.anthropic.com/v1/models" \
+        -H "x-api-key: $key" \
+        -H "anthropic-version: 2023-06-01" \
+        --max-time 10)
+    echo "$http_code"
+}
+
+validate_openai_key() {
+    local key="$1"
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+        "https://api.openai.com/v1/models" \
+        -H "Authorization: Bearer $key" \
+        --max-time 10)
+    echo "$http_code"
+}
+
 if [ "$provider_choice" = "2" ]; then
     LLM_PROVIDER="claude"
     echo ""
-    read -rsp "  Enter your Anthropic API key: " ANTHROPIC_API_KEY
+    read -rsp "  Enter your Anthropic API key (paste then press Enter): " ANTHROPIC_API_KEY
     echo ""
     echo ""
 
@@ -188,12 +209,22 @@ if [ "$provider_choice" = "2" ]; then
         exit 1
     fi
     echo -e "  ${GREEN}Key received:${NC} $(mask_key "$ANTHROPIC_API_KEY")"
+    echo -n "  Validating key... "
+    code=$(validate_anthropic_key "$ANTHROPIC_API_KEY")
+    if [ "$code" = "200" ]; then
+        echo -e "${GREEN}OK${NC}"
+    elif [ "$code" = "401" ]; then
+        echo -e "${RED}FAILED (invalid key - please check and re-run setup.sh)${NC}"
+        exit 1
+    else
+        echo -e "${YELLOW}Could not verify (HTTP $code) - continuing anyway${NC}"
+    fi
     echo ""
 
     echo -e "  ${YELLOW}Note:${NC} The research phase uses gpt-4o-mini (OpenAI) for web search."
     echo "  Providing an OpenAI key enables this (recommended but optional)."
     echo ""
-    read -rsp "  Enter OpenAI key (or press Enter to skip web search): " OPENAI_API_KEY
+    read -rsp "  Enter OpenAI key (paste then press Enter, or just press Enter to skip): " OPENAI_API_KEY
     echo ""
     echo ""
 
@@ -202,12 +233,22 @@ if [ "$provider_choice" = "2" ]; then
         OPENAI_API_KEY="sk-dummy-no-web-search"
     else
         echo -e "  ${GREEN}Key received:${NC} $(mask_key "$OPENAI_API_KEY")"
+        echo -n "  Validating key... "
+        code=$(validate_openai_key "$OPENAI_API_KEY")
+        if [ "$code" = "200" ]; then
+            echo -e "${GREEN}OK${NC}"
+        elif [ "$code" = "401" ]; then
+            echo -e "${RED}FAILED (invalid key - please check and re-run setup.sh)${NC}"
+            exit 1
+        else
+            echo -e "${YELLOW}Could not verify (HTTP $code) - continuing anyway${NC}"
+        fi
         echo ""
     fi
 else
     LLM_PROVIDER="openai"
     echo ""
-    read -rsp "  Enter your OpenAI API key: " OPENAI_API_KEY
+    read -rsp "  Enter your OpenAI API key (paste then press Enter): " OPENAI_API_KEY
     echo ""
     echo ""
 
@@ -216,6 +257,16 @@ else
         exit 1
     fi
     echo -e "  ${GREEN}Key received:${NC} $(mask_key "$OPENAI_API_KEY")"
+    echo -n "  Validating key... "
+    code=$(validate_openai_key "$OPENAI_API_KEY")
+    if [ "$code" = "200" ]; then
+        echo -e "${GREEN}OK${NC}"
+    elif [ "$code" = "401" ]; then
+        echo -e "${RED}FAILED (invalid key - please check and re-run setup.sh)${NC}"
+        exit 1
+    else
+        echo -e "${YELLOW}Could not verify (HTTP $code) - continuing anyway${NC}"
+    fi
     echo ""
 fi
 
