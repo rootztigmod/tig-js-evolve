@@ -54,7 +54,7 @@ Schedule 50 jobs on 30 machines to minimise makespan (total completion time).
 - ONE focused change per iteration - do not rewrite everything
 - Build on successes - if something improved a track, understand WHY and refine
 - Quality through intelligence, not computation - smarter decisions, not more iterations
-- Never increase iteration counts or add exponential complexity
+- Never increase iteration counts or add exponential complexity unless it is justified
 - Valid schedules are non-negotiable - always call save_solution with a feasible result
 
 ---
@@ -89,3 +89,4 @@ Edit this section before every run. The more specific you are, the better the AI
 
 ### What success looks like
 [FILL IN your target, e.g. "Beat baseline on at least 2 of the 5 tracks" or "Improve fjsp_high by >1%"]
+
