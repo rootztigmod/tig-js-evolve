@@ -170,6 +170,12 @@ LLM_PROVIDER=""
 OPENAI_API_KEY=""
 ANTHROPIC_API_KEY=""
 
+mask_key() {
+    local key="$1"
+    local prefix="${key:0:8}"
+    echo "${prefix}******"
+}
+
 if [ "$provider_choice" = "2" ]; then
     LLM_PROVIDER="claude"
     echo ""
@@ -180,6 +186,7 @@ if [ "$provider_choice" = "2" ]; then
         echo -e "${RED}  Error: Anthropic API key cannot be empty.${NC}"
         exit 1
     fi
+    echo -e "  ${GREEN}Anthropic key received:${NC} $(mask_key "$ANTHROPIC_API_KEY")"
 
     echo ""
     echo -e "  ${YELLOW}Note:${NC} The research phase uses gpt-4o-mini (OpenAI) for web search."
@@ -191,6 +198,8 @@ if [ "$provider_choice" = "2" ]; then
     if [ -z "$OPENAI_API_KEY" ]; then
         echo -e "  ${YELLOW}Web search disabled. Research will run without internet search.${NC}"
         OPENAI_API_KEY="sk-dummy-no-web-search"
+    else
+        echo -e "  ${GREEN}OpenAI key received:${NC} $(mask_key "$OPENAI_API_KEY")"
     fi
 else
     LLM_PROVIDER="openai"
@@ -202,6 +211,7 @@ else
         echo -e "${RED}  Error: OpenAI API key cannot be empty.${NC}"
         exit 1
     fi
+    echo -e "  ${GREEN}OpenAI key received:${NC} $(mask_key "$OPENAI_API_KEY")"
 fi
 
 # ─── Write .env ───────────────────────────────────────────────────────────────
