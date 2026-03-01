@@ -20,9 +20,10 @@ echo ""
 # ─── Already set up? ──────────────────────────────────────────────────────────
 if [ -f "$ENV_FILE" ]; then
     echo -e "${GREEN}Setup already complete.${NC}"
-    echo -e "Run ${BOLD}python run.py${NC} to start evolving."
+    echo -e "Run ${BOLD}conda activate deepevolve && python run.py${NC} to start evolving."
     echo ""
-    echo -e "To redo setup, delete ${BOLD}.env${NC} and run this script again."
+    echo -e "To redo setup, run:"
+    echo -e "  ${BOLD}rm .env && ./setup.sh${NC}"
     exit 0
 fi
 
