@@ -9,6 +9,8 @@ import json
 import os
 import sys
 
+VERBOSE = "--verbose" in sys.argv
+
 # ─── Environment check ────────────────────────────────────────────────────────
 _conda_env = os.environ.get("CONDA_DEFAULT_ENV", "")
 if _conda_env != "deepevolve":
@@ -18,6 +20,16 @@ if _conda_env != "deepevolve":
 import shutil
 import subprocess
 from pathlib import Path
+
+from InquirerPy import inquirer
+from InquirerPy.base.control import Choice
+from InquirerPy.separator import Separator
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich import box
+
+console = Console()
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 SCRIPT_DIR    = Path(__file__).parent.resolve()
@@ -45,7 +57,7 @@ TRACK_TO_FILE = {
 
 DOCKER_IMAGE = "ghcr.io/tig-foundation/tig-monorepo/job_scheduling/dev:0.0.5"
 
-# ─── Colours ──────────────────────────────────────────────────────────────────
+# ─── Colours (kept for non-menu output e.g. baseline, launch banner) ──────────
 GREEN  = "\033[0;32m"
 YELLOW = "\033[1;33m"
 RED    = "\033[0;31m"
@@ -55,6 +67,23 @@ NC     = "\033[0m"
 
 def c(colour, text):
     return f"{colour}{text}{NC}"
+
+
+# ─── Rich helpers ─────────────────────────────────────────────────────────────
+def header():
+    console.print()
+    console.print(Panel(
+        "[bold cyan]TIG Job Scheduling  ·  DeepEvolve Launcher[/bold cyan]",
+        box=box.DOUBLE_EDGE,
+        expand=False,
+        padding=(0, 6),
+    ))
+    console.print()
+
+
+def section(title: str):
+    console.print(f"\n[bold cyan]{title}[/bold cyan]")
+    console.print("[dim]" + "─" * 50 + "[/dim]")
 
 # ─── Env loading ──────────────────────────────────────────────────────────────
 def load_env() -> dict:
@@ -76,37 +105,23 @@ def apply_env(env: dict) -> None:
 
 
 # ─── Menu helpers ─────────────────────────────────────────────────────────────
-def prompt_choice(prompt: str, options: list, allow_multi: bool = False) -> list:
-    for i, opt in enumerate(options, 1):
-        print(f"  {c(BOLD, str(i))}) {opt}")
-    print()
-    while True:
-        raw = input(f"  {prompt}: ").strip()
-        if not raw:
-            continue
-        try:
-            if allow_multi and raw.lower() == "a":
-                return list(range(len(options)))
-            parts = [int(x.strip()) for x in raw.replace(",", " ").split()]
-            if all(1 <= p <= len(options) for p in parts):
-                return [p - 1 for p in parts]
-        except ValueError:
-            pass
-        print(c(YELLOW, f"  Please enter a number between 1 and {len(options)}."))
-
-
 def prompt_int(prompt: str, default: int, min_val: int = 1, max_val: int = 100000) -> int:
-    while True:
-        raw = input(f"  {prompt} [default {default}]: ").strip()
-        if not raw:
-            return default
+    def _validate(val):
         try:
-            val = int(raw)
-            if min_val <= val <= max_val:
-                return val
+            n = int(val)
+            if min_val <= n <= max_val:
+                return True
+            return f"Enter a number between {min_val} and {max_val}"
         except ValueError:
-            pass
-        print(c(YELLOW, f"  Please enter a number between {min_val} and {max_val}."))
+            return "Please enter a whole number"
+
+    result = inquirer.text(
+        message=prompt,
+        default=str(default),
+        validate=_validate,
+        invalid_message="Invalid value",
+    ).execute()
+    return int(result)
 
 
 # ─── Algorithm detection ──────────────────────────────────────────────────────
@@ -188,13 +203,20 @@ def detect_track_files(algo: dict) -> dict:
 # ─── Ideas loading ────────────────────────────────────────────────────────────
 def load_ideas() -> str:
     if not IDEAS_FILE.exists():
-        print(c(YELLOW, "  Warning: ideas.md not found. AI will run without your guidance."))
+        console.print("  [yellow]![/yellow] ideas.md not found — AI will run without your guidance.")
         return ""
     content = IDEAS_FILE.read_text(encoding="utf-8")
     if "[FILL IN" in content:
-        print(c(YELLOW, "\n  Warning: ideas.md still has unfilled [FILL IN] placeholders."))
-        print(c(YELLOW,   "  Consider editing ideas.md before this run for better results."))
-        input(f"  {c(BOLD, 'Press Enter to continue anyway, or Ctrl+C to edit first...')}")
+        console.print()
+        console.print(Panel(
+            "[yellow]ideas.md still has unfilled [FILL IN] placeholders.[/yellow]\n"
+            "Consider editing it before this run for better results.",
+            box=box.ROUNDED, padding=(0, 2), expand=False,
+        ))
+        inquirer.confirm(
+            message="Continue anyway?",
+            default=True,
+        ).execute()
     return content
 
 
@@ -228,61 +250,97 @@ def find_checkpoints() -> list:
 def display_checkpoint_menu(checkpoints: list) -> tuple:
     """Returns (problem_name, resume_flag). Loops until user picks resume or new run."""
     while True:
-        # Re-scan checkpoints each loop so the list stays accurate after deletions
         checkpoints = find_checkpoints()
         if not checkpoints:
-            print(c(YELLOW, "\n  All previous runs deleted."))
+            console.print("\n[yellow]All previous runs deleted.[/yellow]")
             return None, False
 
-        print(c(CYAN, "\n  Previous run(s) detected:\n"))
+        section("Previous Runs")
+        console.print()
+
+        # Build a summary table — tracks shown as count to keep width manageable
+        table = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan",
+                      padding=(0, 2))
+        table.add_column("#",          style="bold", width=3)
+        table.add_column("Algorithm",  style="cyan")
+        table.add_column("Evolving")
+        table.add_column("Tracks",     justify="center")
+        table.add_column("Progress",   justify="right")
+        table.add_column("Baseline",   justify="right")
+
         for i, ckpt in enumerate(checkpoints, 1):
-            meta = ckpt["meta"]
-            module  = meta.get("evolve_module", "unknown")
-            tracks  = ", ".join(meta.get("tracks", []))
-            iters   = meta.get("max_iterations", "?")
-            current = ckpt["iteration"]
+            meta      = ckpt["meta"]
+            module    = meta.get("evolve_module") or "all files"
+            tracks    = meta.get("tracks", [])
+            track_str = "all tracks" if len(tracks) == len(TRACKS) else ", ".join(tracks)
+            iters     = meta.get("max_iterations", "?")
+            current   = ckpt["iteration"]
             baselines = meta.get("baselines", {})
-            print(f"  {c(BOLD, str(i))}) {ckpt['problem']}")
-            print(f"       Algorithm  : {meta.get('algo_name', '?')}")
-            print(f"       Evolving   : {module}")
-            print(f"       Tracks     : {tracks}")
-            print(f"       Progress   : iteration {current}/{iters}")
-            if baselines:
-                avg = sum(baselines.values()) / len(baselines)
-                print(f"       Baseline   : avg {avg:.0f}")
-            print()
+            avg_bl    = f"{sum(baselines.values())/len(baselines):.0f}" if baselines else "—"
+            table.add_row(
+                str(i),
+                meta.get("algo_name", "?"),
+                module,
+                track_str,
+                f"{current}/{iters}",
+                avg_bl,
+            )
 
-        options = [ckpt["problem"] for ckpt in checkpoints] + ["Start a new run", "Delete a previous run"]
-        choice = prompt_choice("Enter choice", options)[0]
+        console.print(Panel(table, box=box.ROUNDED, padding=(0, 1), expand=False))
 
-        if choice < len(checkpoints):
-            return checkpoints[choice]["problem"], True
-        elif choice == len(checkpoints):
+        # Build choices
+        choices = [
+            Choice(("resume", ckpt["problem"]),
+                   name=f"Resume  {ckpt['problem']}")
+            for ckpt in checkpoints
+        ]
+        choices += [
+            Separator(),
+            Choice(("new",    None), name="Start a new run"),
+            Choice(("delete", None), name="Delete a previous run"),
+        ]
+
+        action, value = inquirer.select(
+            message="What would you like to do?",
+            choices=choices,
+        ).execute()
+
+        if action == "resume":
+            return value, True
+        elif action == "new":
             return None, False
         else:
-            print()
-            del_choice = prompt_choice("Which run to delete?", [c_["problem"] for c_ in checkpoints])[0]
-            target = checkpoints[del_choice]["path"]
-            print()
-            print(c(YELLOW, f"  About to delete: {c(BOLD, target.name)}"))
-            confirm = input(f"  {c(BOLD, 'Are you sure? [y/N]: ')}").strip().lower()
-            if confirm in ("y", "yes"):
+            del_choices = [
+                Choice(ckpt["path"], name=ckpt["problem"])
+                for ckpt in checkpoints
+            ]
+            target = inquirer.select(
+                message="Which run do you want to delete?",
+                choices=del_choices,
+            ).execute()
+            console.print()
+            confirmed = inquirer.confirm(
+                message=f"Delete '{target.name}'? This cannot be undone.",
+                default=False,
+            ).execute()
+            if confirmed:
                 shutil.rmtree(target, ignore_errors=True)
-                print(c(GREEN, f"  Deleted {target.name}."))
+                console.print(f"  [green]✓[/green] Deleted [bold]{target.name}[/bold].")
             else:
-                print(c(YELLOW, "  Cancelled."))
+                console.print("  [yellow]Cancelled.[/yellow]")
 
 
 # ─── Initial baseline run ─────────────────────────────────────────────────────
-def run_baseline(algo: dict, tracks: list, nonces: int, workers: int, tig_path: str, hyperparams: str = "null") -> dict:
+def run_baseline(algo: dict, tracks: list, nonces: int, workers: int, tig_path: str, hyperparams: dict = None) -> dict:
     """
     Build and test the algorithm as-is to establish per-track baselines.
     Returns {track: quality} dict.
     """
-    print()
-    print(c(CYAN, "=" * 55))
-    print(c(CYAN, "  Running initial baseline evaluation..."))
-    print(c(CYAN, "=" * 55))
+    console.print()
+    console.print(Panel(
+        "[cyan]Running initial baseline evaluation...[/cyan]",
+        box=box.ROUNDED, padding=(0, 2), expand=False,
+    ))
 
     algo_name = algo["name"]
 
@@ -328,15 +386,19 @@ def run_baseline(algo: dict, tracks: list, nonces: int, workers: int, tig_path: 
         sys.exit(1)
     print(c(GREEN, "  Build successful."))
 
+    if hyperparams is None:
+        hyperparams = {t: "null" for t in tracks}
+
     baselines = {}
     for track in tracks:
-        track_id = f"n=50,s={track}"
-        print(f"  Testing {track} ({nonces} nonces, hyperparams={hyperparams})...", end=" ", flush=True)
+        track_id   = f"n=50,s={track}"
+        track_hyper = hyperparams.get(track, "null")
+        print(f"  Testing {track} ({nonces} nonces, hyperparams={track_hyper})...", end=" ", flush=True)
         cmd_test = [
             "docker", "run", "--rm",
             "-v", f"{tig_path}:/app",
             DOCKER_IMAGE,
-            "test_algorithm", algo_name, track_id, hyperparams,
+            "test_algorithm", algo_name, track_id, track_hyper,
             "--nonces", str(nonces), "--workers", str(workers),
         ]
         res = subprocess.run(cmd_test, capture_output=True, text=True,
@@ -355,9 +417,11 @@ def run_baseline(algo: dict, tracks: list, nonces: int, workers: int, tig_path: 
         print(c(GREEN, f"quality = {quality:.0f}"))
 
     avg = sum(baselines.values()) / len(baselines)
-    print()
-    print(f"  {c(BOLD, 'Baseline avg_quality:')} {avg:.0f}")
-    print(c(CYAN, "=" * 55))
+    console.print()
+    console.print(Panel(
+        f"[bold]Baseline avg_quality:[/bold]  [green]{avg:.0f}[/green]",
+        box=box.ROUNDED, padding=(0, 2), expand=False,
+    ))
     return baselines
 
 
@@ -365,109 +429,173 @@ def run_baseline(algo: dict, tracks: list, nonces: int, workers: int, tig_path: 
 def evolution_menu(tig_path: str, env: dict) -> dict:
     algorithms = detect_algorithms(tig_path)
     if not algorithms:
-        print(c(RED, f"No algorithms found in {tig_path}/tig-algorithms/src/job_scheduling/"))
+        console.print(f"[red]No algorithms found in {tig_path}/tig-algorithms/src/job_scheduling/[/red]")
         sys.exit(1)
 
-    print(c(CYAN, "\n  Algorithms found in tig-monorepo:\n"))
-    algo_labels = [f"{a['name']}  ({a['type']})" for a in algorithms]
-    algo_idx = prompt_choice("Which algorithm do you want to evolve?", algo_labels)[0]
-    algo = algorithms[algo_idx]
-    print()
+    # ── Algorithm ──
+    section("Algorithm")
+    algo = inquirer.select(
+        message="Which algorithm do you want to evolve?",
+        choices=[
+            Choice(a, name=f"{a['name']}  ({a['type']})")
+            for a in algorithms
+        ],
+    ).execute()
 
-    evolve_mode = "full"
+    evolve_mode   = "full"
     evolve_module = None
     evolve_tracks = TRACKS
 
+    # ── File selection (modular only) ──
     if algo["type"] == "modular":
-        track_files = detect_track_files(algo)
+        track_files  = detect_track_files(algo)
         all_rs_files = [f for f in algo["files"] if f != "mod.rs"]
 
         if track_files:
-            print(c(CYAN, "  Evolution mode:\n"))
-            mode_options = ["Evolve a single file", "Single file algorithm (do not use this option if your algorithm is modular)"]
-            mode_idx = prompt_choice("Choose evolution mode", mode_options)[0]
-            print()
+            section("Evolution Mode")
+            mode = inquirer.select(
+                message="Choose what to evolve:",
+                choices=[
+                    Choice("single", name="Evolve a single file"),
+                    Choice("full",   name="Evolve full algorithm (all files)"),
+                ],
+            ).execute()
 
-            if mode_idx == 0:
+            if mode == "single":
                 evolve_mode = "single_track"
-                print(c(CYAN, "  Files available for evolution:\n"))
-                track_names = sorted(track_files.keys())
+                section("File to Evolve")
+                track_names       = sorted(track_files.keys())
                 sorted_track_files = [track_files[t] for t in track_names]
-                track_options = [f"{t}  ({track_files[t]})" for t in track_names]
-                non_track = [f for f in all_rs_files if f not in track_files.values()]
+                non_track         = [f for f in all_rs_files if f not in track_files.values()]
+                all_evolvable     = sorted_track_files + non_track
+
+                file_choices = [
+                    Choice(track_files[t], name=f"{t}  ({track_files[t]})")
+                    for t in track_names
+                ]
                 if non_track:
-                    track_options += [f"{f}  (shared module - affects all tracks)" for f in non_track]
-                    all_evolvable = sorted_track_files + non_track
-                else:
-                    all_evolvable = sorted_track_files
-                t_idx = prompt_choice("Which file to evolve?", track_options)[0]
-                evolve_module = all_evolvable[t_idx]
+                    file_choices.append(Separator())
+                    for f in non_track:
+                        file_choices.append(Choice(f, name=f"{f}  (shared — affects all tracks)"))
+
+                evolve_module = inquirer.select(
+                    message="Which file to evolve?",
+                    choices=file_choices,
+                ).execute()
                 matched_track = [t for t, f in track_files.items() if f == evolve_module]
                 evolve_tracks = matched_track if matched_track else TRACKS
-                print()
             else:
-                evolve_mode = "full"
+                evolve_mode   = "full"
                 evolve_module = None
         else:
-            print(c(CYAN, "  No track-specific files detected.\n"))
-            print(c(CYAN, "  Module files available for evolution:\n"))
-            evolve_mode = "single_track"
-            module_options = [f"{f}  (shared module - affects all tracks)" for f in all_rs_files]
-            m_idx = prompt_choice("Which module file to evolve?", module_options)[0]
-            evolve_module = all_rs_files[m_idx]
+            section("File to Evolve")
+            console.print("  [yellow]No track-specific files detected — choose a shared module.[/yellow]\n")
+            evolve_mode   = "single_track"
+            evolve_module = inquirer.select(
+                message="Which module file to evolve?",
+                choices=[
+                    Choice(f, name=f"{f}  (shared — affects all tracks)")
+                    for f in all_rs_files
+                ],
+            ).execute()
             evolve_tracks = TRACKS
-            print(c(YELLOW, f"  Note: {evolve_module} is shared - changes affect all tracks.\n"))
+            console.print(f"  [yellow]![/yellow] {evolve_module} is shared — changes affect all tracks.")
 
-    print(c(CYAN, "  Which tracks to test?\n"))
-    track_options = TRACKS + ["All tracks"]
-    track_indices = prompt_choice(
-        "Select tracks (comma-separated or 'a' for all)",
-        track_options, allow_multi=True,
-    )
-    if len(TRACKS) in track_indices:
-        selected_tracks = TRACKS
+    # ── Tracks ──
+    section("Tracks to Test")
+    selected_tracks = inquirer.checkbox(
+        message="Select tracks to test  (space to tick, enter to confirm):",
+        choices=[Choice(t, name=t, enabled=True) for t in TRACKS],
+        validate=lambda result: len(result) > 0,
+        invalid_message="Select at least one track.",
+        transformer=lambda result: ", ".join(result),
+    ).execute()
+
+    # ── Run parameters ──
+    section("Run Parameters")
+    nonces    = prompt_int("Nonces per track", default=100, min_val=1,   max_val=10000)
+    workers   = prompt_int("Workers",          default=16,  min_val=1,   max_val=256)
+    max_iters = prompt_int("Max iterations",   default=20,  min_val=1,   max_val=500)
+
+    # ── Hyperparameters ──
+    section("Hyperparameters")
+
+    use_hyperparams = inquirer.confirm(
+        message="Use hyperparameters? (if unsure, select No)",
+        default=False,
+    ).execute()
+
+    def _validate_hyper(val):
+        from prompt_toolkit.validation import ValidationError, Validator
+        if not val or val.strip() == "":
+            return True
+        try:
+            json.loads(val)
+            return True
+        except Exception:
+            raise ValidationError(
+                message='Invalid JSON — e.g. {"flow":"flow_shop"} or leave blank',
+                cursor_position=len(val),
+            )
+
+    hyperparams = {}
+    if use_hyperparams:
+        console.print('  [yellow]Enter hyperparameters for each track. Leave blank for null.[/yellow]')
+        console.print('  [yellow]Must be exact JSON e.g. {"flow":"flow_shop"} or {"effort":"high"}[/yellow]\n')
+        for track in selected_tracks:
+            raw = inquirer.text(
+                message=f"{track}:",
+                default="",
+                validate=_validate_hyper,
+                invalid_message='Must be valid JSON e.g. {"flow":"flow_shop"} or leave blank',
+            ).execute()
+            hyperparams[track] = raw.strip() if raw.strip() else "null"
     else:
-        selected_tracks = [TRACKS[i] for i in track_indices if i < len(TRACKS)]
-    print()
+        for track in selected_tracks:
+            hyperparams[track] = "null"
 
-    nonces    = prompt_int("Nonces per track", default=100, min_val=1,  max_val=10000)
-    workers   = prompt_int("Workers",          default=16,  min_val=1,  max_val=256)
-    max_iters = prompt_int("Max iterations",   default=20,  min_val=1,  max_val=500)
-    print()
-
-    print(c(CYAN, "  Hyperparameters (passed to test_algorithm instead of null):\n"))
-    print(c(YELLOW, "  Leave blank for null. String values must be quoted in strict JSON."))
-    print(c(YELLOW, '  Examples: {"flow":"flow_shop"}   or   {"flow":"flow_shop","depth":3}'))
-    print(c(YELLOW,  "  This is passed directly to test_algorithm - it must be exactly correct.\n"))
-    raw_hyper = input(f"  {c(BOLD, 'Hyperparameters [default: null]: ')}").strip()
-    hyperparams = raw_hyper if raw_hyper else "null"
-    print()
-
-    print(c(CYAN, "  LLM Provider:\n"))
-    provider_options = ["OpenAI (GPT)", "Anthropic (Claude)"]
+    # ── Provider ──
+    section("LLM Provider")
     default_provider = env.get("LLM_PROVIDER", "openai")
-    default_idx = 1 if default_provider == "claude" else 0
-    print(f"  (default: {provider_options[default_idx]})\n")
-    provider_idx = prompt_choice("Select provider", provider_options)[0]
-    provider = "claude" if provider_idx == 1 else "openai"
-    print()
+    provider_map = {"openai": "OpenAI (GPT)", "claude": "Anthropic (Claude)", "gemini": "Google (Gemini)"}
+    provider = inquirer.select(
+        message="Which LLM provider?",
+        choices=[
+            Choice("openai",  name="OpenAI  (GPT)"),
+            Choice("claude",  name="Anthropic  (Claude)"),
+            Choice("gemini",  name="Google  (Gemini)"),
+        ],
+        default=default_provider,
+    ).execute()
 
     # ── Confirmation summary ──
-    print(c(CYAN, "  Ready to launch:\n"))
-    print(f"    Algorithm  : {c(BOLD, algo['name'])} ({algo['type']})")
-    print(f"    Evolving   : {c(BOLD, evolve_module or 'all files')}")
-    print(f"    Tracks     : {c(BOLD, ', '.join(selected_tracks))}")
-    print(f"    Nonces     : {c(BOLD, str(nonces))}")
-    print(f"    Workers    : {c(BOLD, str(workers))}")
-    print(f"    Iterations : {c(BOLD, str(max_iters))}")
-    print(f"    Hyperparams: {c(BOLD, hyperparams)}")
-    print(f"    Provider   : {c(BOLD, provider)}")
-    print()
-    confirm = input(f"  {c(BOLD, 'Confirm? [Y/n]: ')}").strip().lower()
-    if confirm in ("n", "no"):
-        print(c(YELLOW, "  Cancelled. Run again to make new selections."))
+    console.print()
+    summary = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
+    summary.add_column(style="bold cyan", no_wrap=True)
+    summary.add_column()
+    summary.add_row("Algorithm",   f"{algo['name']}  ({algo['type']})")
+    summary.add_row("Evolving",    evolve_module or "all files")
+    summary.add_row("Tracks",      ", ".join(selected_tracks))
+    summary.add_row("Nonces",      str(nonces))
+    summary.add_row("Workers",     str(workers))
+    summary.add_row("Iterations",  str(max_iters))
+    non_null = {t: v for t, v in hyperparams.items() if v != "null"}
+    if not non_null:
+        hyper_display = "null (all tracks)"
+    elif len(non_null) == 1:
+        t, v = next(iter(non_null.items()))
+        hyper_display = f"{t}: {v}"
+    else:
+        hyper_display = f"{len(non_null)} tracks with custom hyperparams"
+    summary.add_row("Hyperparams", hyper_display)
+    summary.add_row("Provider",    provider_map.get(provider, provider))
+    console.print(Panel(summary, title="[bold]Ready to Launch[/bold]", box=box.ROUNDED, padding=(0, 2), expand=False))
+
+    confirmed = inquirer.confirm(message="Launch DeepEvolve with these settings?", default=True).execute()
+    if not confirmed:
+        console.print("[yellow]Cancelled. Run again to make new selections.[/yellow]")
         sys.exit(0)
-    print()
+    console.print()
 
     return {
         "algo_name":      algo["name"],
@@ -506,7 +634,9 @@ def generate_problem_files(params: dict, problem_name: str, env: dict) -> Path:
     evolve_module = params["evolve_module"]
     tracks       = params["tracks"]
     nonces       = params["nonces"]
-    hyperparams  = params.get("hyperparams", "null")
+    hyperparams  = params.get("hyperparams", {t: "null" for t in tracks})
+    if isinstance(hyperparams, str):
+        hyperparams = {t: hyperparams for t in tracks}
     baselines    = params.get("baselines", {})
     ideas        = load_ideas()
 
@@ -637,7 +767,8 @@ def generate_problem_files(params: dict, problem_name: str, env: dict) -> Path:
     content = content.replace("__TRACKS__",        track_repr)
     content = content.replace("__NONCES__",        str(nonces))
     content = content.replace("__WORKERS__",       str(params.get("workers", 16)))
-    content = content.replace("__HYPERPARAMS__",   hyperparams.replace('"', '\\"'))
+    hyperparams_repr = json.dumps(hyperparams)
+    content = content.replace('"__HYPERPARAMS__"', hyperparams_repr)
     content = content.replace("__TIG_PATH__",      tig_path)
     content = content.replace("__DOCKER_IMAGE__",  DOCKER_IMAGE)
     content = content.replace("__BASELINES__",     baseline_repr)
@@ -692,29 +823,37 @@ def launch_deepevolve(problem_name: str, params: dict, env: dict, resume: bool) 
                 cmd.append(f"database.db_path={latest_ckpt}")
                 print(c(YELLOW, f"  Loading checkpoint: {latest_ckpt.name}"))
 
-    print()
-    print(c(CYAN, "=" * 55))
-    print(c(CYAN, "  Launching DeepEvolve"))
-    print(c(CYAN, f"  Algorithm  : {params.get('algo_name')}"))
-    print(c(CYAN, f"  Evolving   : {module}"))
-    print(c(CYAN, f"  Tracks     : {', '.join(params.get('tracks', []))}"))
-    print(c(CYAN, f"  Nonces     : {params.get('nonces')}"))
-    print(c(CYAN, f"  Iterations : {max_iters}"))
-    print(c(CYAN, f"  Provider   : {provider}"))
+    launch_table = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
+    launch_table.add_column(style="bold cyan", no_wrap=True)
+    launch_table.add_column()
+    launch_table.add_row("Algorithm",  params.get("algo_name", ""))
+    launch_table.add_row("Evolving",   module if params.get("evolve_module") else "full algorithm")
+    launch_table.add_row("Tracks",     ", ".join(params.get("tracks", [])))
+    launch_table.add_row("Nonces",     str(params.get("nonces", "")))
+    launch_table.add_row("Iterations", str(max_iters))
+    launch_table.add_row("Provider",   provider)
     if resume:
-        print(c(YELLOW, "  Resuming from checkpoint"))
-    print(c(CYAN, "=" * 55))
-    print()
+        launch_table.add_row("Mode", "[yellow]Resuming from checkpoint[/yellow]")
 
-    subprocess.run(cmd, cwd=str(DEEPEVOLVE_DIR), check=False)
+    console.print()
+    console.print(Panel(
+        launch_table,
+        title="[bold cyan]Launching DeepEvolve[/bold cyan]",
+        box=box.ROUNDED,
+        padding=(1, 2),
+        expand=False,
+    ))
+    console.print()
+
+    sub_env = os.environ.copy()
+    if VERBOSE:
+        sub_env["DEEPEVOLVE_VERBOSE"] = "1"
+    subprocess.run(cmd, cwd=str(DEEPEVOLVE_DIR), env=sub_env, check=False)
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
-    print()
-    print(c(BOLD, c(CYAN, "=" * 55)))
-    print(c(BOLD, c(CYAN, "  TIG Job Scheduling - DeepEvolve Launcher")))
-    print(c(BOLD, c(CYAN, "=" * 55)))
+    header()
 
     env = load_env()
     apply_env(env)
@@ -734,9 +873,26 @@ def main():
         meta_file = DEEPEVOLVE_DIR / "examples" / problem_name / ".run_meta.json"
         if meta_file.exists():
             params = json.loads(meta_file.read_text())
-            print(c(GREEN, f"  Resuming: {problem_name}"))
+            console.print(f"  [green]✓[/green] Resuming: [bold]{problem_name}[/bold]")
+            # Check if the run has already reached its iteration limit
+            ckpt_dir = DEEPEVOLVE_DIR / "examples" / problem_name / "ckpt"
+            existing_ckpts = sorted(ckpt_dir.glob("checkpoint_*"), key=lambda p: p.name) if ckpt_dir.exists() else []
+            current_iter = int(existing_ckpts[-1].name.split("_")[-1]) if existing_ckpts else 0
+            max_iters = params.get("max_iterations", 0)
+            if current_iter >= max_iters:
+                console.print()
+                console.print(Panel(
+                    f"[yellow]This run completed all {max_iters} iteration(s).[/yellow]\n"
+                    "How many more iterations would you like to add?",
+                    box=box.ROUNDED, padding=(0, 2),
+                    expand=False,
+                ))
+                extra = prompt_int("Additional iterations", default=5, min_val=1, max_val=500)
+                params["max_iterations"] = max_iters + extra
+                meta_file.write_text(json.dumps(params, indent=2))
+                console.print(f"  [green]✓[/green] Extended to [bold]{params['max_iterations']}[/bold] total iterations.")
         else:
-            print(c(YELLOW, "  Run metadata not found - starting fresh."))
+            console.print("  [yellow]Run metadata not found — starting fresh.[/yellow]")
             resume = False
 
     if not resume:

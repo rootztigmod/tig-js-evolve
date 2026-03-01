@@ -16,6 +16,13 @@ import time
 import traceback
 from pathlib import Path
 
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich import box as rich_box
+
+_con = Console(stderr=True)
+
 def _print(msg: str) -> None:
     """Print to stderr so output is visible even when stdout is redirected by DeepEvolve."""
     print(msg, file=sys.stderr, flush=True)
@@ -28,7 +35,7 @@ EVOLVE_MODULE  = "__EVOLVE_MODULE__"
 TRACKS         = __TRACKS__
 NONCES         = __NONCES__
 WORKERS        = __WORKERS__
-HYPERPARAMS    = "__HYPERPARAMS__"
+HYPERPARAMS    = "__HYPERPARAMS__"  # dict: {track: hyperparams_string}
 TIG_PATH       = "__TIG_PATH__"
 DOCKER_IMAGE   = "__DOCKER_IMAGE__"
 BASELINES      = __BASELINES__
@@ -125,12 +132,13 @@ def _build() -> tuple:
 
 # ─── Test a single track ──────────────────────────────────────────────────────
 def _test_track(track: str, nonces: int, timeout_s: int = 600) -> dict:
-    track_id = f"n=50,s={track}"
+    track_id    = f"n=50,s={track}"
+    track_hyper = HYPERPARAMS.get(track, "null") if isinstance(HYPERPARAMS, dict) else HYPERPARAMS
     cmd = [
         "docker", "run", "--rm",
         "-v", f"{TIG_PATH}:/app",
         DOCKER_IMAGE,
-        "test_algorithm", ALGO_NAME, track_id, HYPERPARAMS,
+        "test_algorithm", ALGO_NAME, track_id, track_hyper,
         "--nonces", str(nonces), "--workers", str(WORKERS),
     ]
     try:
@@ -213,60 +221,121 @@ def deepevolve_interface():
     """
     t_start = time.time()
 
-    _print("\n" + "=" * 60)
-    _print(f"Job Scheduling - {ALGO_NAME}")
-    _print(f"Evolving: {EVOLVE_MODULE or 'full algorithm'}")
-    _print(f"Tracks: {', '.join(TRACKS)}")
-    _print("=" * 60)
+    _con.print()
+    _con.print(Panel(
+        f"[bold cyan]{ALGO_NAME}[/bold cyan]  ·  "
+        f"Evolving: [bold]{EVOLVE_MODULE or 'full algorithm'}[/bold]  ·  "
+        f"Tracks: [bold]{len(TRACKS)}[/bold]",
+        title="[bold]Evaluation[/bold]",
+        box=rich_box.ROUNDED,
+        expand=False,
+        padding=(0, 2),
+    ))
 
     # ── Diagnostic: confirm RUST_CODE was actually modified ──
     rust_lines     = len(RUST_CODE.splitlines())
     original_lines = _RUST_CODE_ORIGINAL_LINE_COUNT
     if rust_lines == original_lines:
-        _print(f"INFO: RUST_CODE line count unchanged ({rust_lines} lines)")
+        _con.print(f"  [yellow]![/yellow]  RUST_CODE unchanged ({rust_lines} lines)")
     else:
-        _print(f"OK: RUST_CODE modified (original={original_lines} lines -> evolved={rust_lines} lines, delta={rust_lines - original_lines:+d})")
+        delta = rust_lines - original_lines
+        _con.print(f"  [green]✓[/green]  RUST_CODE modified  "
+                   f"([dim]{original_lines}[/dim] → [bold]{rust_lines}[/bold] lines, "
+                   f"[{'green' if delta > 0 else 'red'}]{delta:+d}[/])")
 
     try:
         _write_evolved_file()
 
         ok, build_err = _build()
         if not ok:
-            _print(f"Build failed:\n{build_err}")
+            _con.print(f"  [red]✗[/red]  Build failed")
+            _con.print(f"[red]{build_err}[/red]")
             return False, f"Build failed:\n{build_err}"
 
-        _print("Build successful\n")
+        _con.print(f"  [green]✓[/green]  Build successful\n")
 
         track_qualities = {}
         track_times     = {}
         track_invalid   = {}
+        track_results   = {}
 
         for track in TRACKS:
-            _print(f"  Testing: {track} ({NONCES} nonces)")
+            track_hyper = HYPERPARAMS.get(track, "null") if isinstance(HYPERPARAMS, dict) else HYPERPARAMS
+            hyper_str = f", hyperparams={track_hyper}" if track_hyper and track_hyper != "null" else ""
+            _con.print(f"  Testing [cyan]{track}[/cyan] ({NONCES} nonces{hyper_str})...", end="  ")
             res = _test_track(track, NONCES)
             track_qualities[track] = res["quality"]
             track_times[track]     = res["time_s"]
             track_invalid[track]   = res.get("invalid", False)
+            track_results[track]   = res
 
             baseline  = BASELINES.get(track, 0.0)
             delta_pct = (res["quality"] - baseline) / max(baseline, 1.0) * 100.0
             if res.get("invalid"):
-                status = "INVALID"
+                _con.print(f"[red]INVALID[/red]")
             elif res["success"]:
-                status = "OK"
+                colour = "green" if delta_pct >= 0 else "red"
+                _con.print(f"[green]OK[/green]  quality=[bold]{res['quality']:.0f}[/bold]  "
+                           f"delta=[{colour}]{delta_pct:+.1f}%[/]")
             else:
-                status = "FAIL"
-            _print(f"    [{status}] quality={res['quality']:.0f}  "
-                   f"baseline={baseline:.0f}  delta={delta_pct:+.2f}%  "
-                   f"time={res['time_s']:.1f}s")
-            if not res["success"]:
-                _print(f"    Error: {res['error'][:200]}")
+                _con.print(f"[red]FAIL[/red]")
+
+        _con.print()
+
+        # ── Results table ──
+        tbl = Table(box=rich_box.SIMPLE, show_header=True,
+                    header_style="bold cyan", padding=(0, 2))
+        tbl.add_column("Track")
+        tbl.add_column("Status",   justify="center")
+        tbl.add_column("Quality",  justify="right")
+        tbl.add_column("Baseline", justify="right")
+        tbl.add_column("Delta",    justify="right")
+        tbl.add_column("Time",     justify="right")
+
+        for track in TRACKS:
+            res      = track_results[track]
+            baseline = BASELINES.get(track, 0.0)
+            delta_pct = (res["quality"] - baseline) / max(baseline, 1.0) * 100.0
+            if track_invalid.get(track):
+                status = "[red]INVALID[/red]"
+                q_str  = "—"
+                d_str  = f"[red]{delta_pct:+.1f}%[/red]"
+            elif res["success"]:
+                status = "[green]OK[/green]"
+                q_str  = f"{res['quality']:,.0f}"
+                colour = "green" if delta_pct >= 0 else "red"
+                d_str  = f"[{colour}]{delta_pct:+.1f}%[/]"
+            else:
+                status = "[red]FAIL[/red]"
+                q_str  = "—"
+                d_str  = f"[red]{delta_pct:+.1f}%[/red]"
+            tbl.add_row(
+                track,
+                status,
+                q_str,
+                f"{baseline:,.0f}",
+                d_str,
+                f"{res['time_s']:.1f}s",
+            )
+
+        _con.print(tbl)
 
         total_time = time.time() - t_start
 
+        # Print error details for any INVALID or FAIL tracks
+        problem_tracks = [t for t in TRACKS
+                          if track_invalid.get(t, False) or not track_results[t]["success"]]
+        if problem_tracks:
+            for t in problem_tracks:
+                err = track_results[t].get("error", "")
+                if err:
+                    _con.print(f"  [dim]{t:<20}  {err[:120]}[/dim]")
+            _con.print()
+
         aborted = [t for t in TRACKS if track_invalid.get(t, False)]
         if aborted:
-            _print(f"\nInvalid solutions on: {aborted} - score=0\n")
+            _con.print(f"  [yellow]⚠[/yellow]  Invalid solutions on: "
+                       f"[red]{', '.join(aborted)}[/red]  — score=0\n")
             metrics = {
                 "combined_score":             0.0,
                 "avg_quality":                0.0,
@@ -286,17 +355,16 @@ def deepevolve_interface():
         current_best  = _get_current_best()
         n_improved    = sum(1 for t, q in track_qualities.items()
                             if q > BASELINES.get(t, 0))
+        delta_vs_best = avg_quality - current_best
+        colour        = "green" if delta_vs_best >= 0 else "red"
 
-        _print(f"\nResults:")
-        _print(f"  avg_quality  = {avg_quality:.0f}")
-        _print(f"  current_best = {current_best:.0f}  delta = {avg_quality - current_best:+.0f}")
-        _print(f"  vs_original  = {avg_quality - BASELINE_AVG:+.0f}  (original baseline: {BASELINE_AVG:.0f})")
-        _print(f"  tracks improved vs original: {n_improved}/{len(TRACKS)}")
-        _print(f"  total_time = {total_time:.1f}s")
+        _con.print(f"  [bold]avg_quality[/bold]  {avg_quality:,.0f}  "
+                   f"│  vs best: [{colour}]{delta_vs_best:+.0f}[/]  "
+                   f"│  vs baseline: {avg_quality - BASELINE_AVG:+.0f}  "
+                   f"│  tracks improved: {n_improved}/{len(TRACKS)}  "
+                   f"│  time: {total_time:.1f}s\n")
 
         _backup_evolved_file(track_qualities)
-
-        _print("=" * 60 + "\n")
 
         metrics = {
             "combined_score":             avg_quality,
@@ -320,13 +388,14 @@ def deepevolve_interface():
 
     except Exception as e:
         err = traceback.format_exc()
-        _print(f"Exception:\n{err}")
+        _con.print(f"[red]Exception: {type(e).__name__}: {e}[/red]")
+        _con.print(f"[dim]{err}[/dim]")
         return False, f"Exception: {type(e).__name__}: {e}\n{err}"
 
 
 if __name__ == "__main__":
     success, result = deepevolve_interface()
-    _print(f"\nSuccess: {success}")
+    _con.print(f"\n[bold]Success:[/bold] {success}")
     if isinstance(result, dict):
         for k, v in result.items():
             _print(f"  {k}: {v}")

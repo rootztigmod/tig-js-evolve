@@ -11,6 +11,10 @@ litellm_models = [
     "claude-opus-4-6",
     "claude-3-5-sonnet-20241022",
     "claude-3-5-haiku-20241022",
+    "gemini/gemini-2.5-pro",
+    "gemini/gemini-2.0-flash",
+    "gemini/gemini-1.5-pro",
+    "gemini/gemini-1.5-flash",
 ]
 
 def is_litellm_model(model_name: str) -> bool:

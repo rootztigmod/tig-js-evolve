@@ -177,8 +177,9 @@ python run.py
 
   1) OpenAI (GPT)
   2) Anthropic (Claude)
+  3) Google (Gemini)
 
-  Select provider [1-2]: 2
+  Select provider [1-3]: 2
 ```
 
 After the menu, the system:
@@ -313,17 +314,17 @@ cp backups/my_algorithm/1772311572_fjsp_high_avg44833.rs \
 
 ## LLM providers and cost
 
-Both OpenAI and Anthropic are supported. You are asked which to use during setup and at each run.
+OpenAI, Anthropic, and Google Gemini are all supported. You are asked which to use during setup and at each run.
 
-| Role | OpenAI | Anthropic | Notes |
+| Role | OpenAI | Anthropic | Gemini | Notes |
 |------|--------|-----------|-------|
-| Planner | gpt-4o-mini | claude-haiku-4-5 | Cheap - structured output |
-| Searcher | gpt-4o-mini | gpt-4o-mini | Web search (always OpenAI) |
-| Writer | gpt-4o | claude-sonnet-4-6 | Research report - most important |
-| Developer | gpt-4o | claude-sonnet-4-6 | Rust code generation |
-| Debugger | gpt-4o-mini | claude-haiku-4-5 | Compile error fixing |
+| Planner | gpt-4o-mini | claude-haiku-4-5 | gemini-2.0-flash | Cheap - structured output |
+| Searcher | gpt-4o-mini | gpt-4o-mini | gpt-4o-mini | Web search (always OpenAI) |
+| Writer | gpt-4o | claude-sonnet-4-6 | gemini-2.5-pro | Research report - most important |
+| Developer | gpt-4o | claude-sonnet-4-6 | gemini-2.5-pro | Rust code generation |
+| Debugger | gpt-4o-mini | claude-haiku-4-5 | gemini-2.0-flash | Compile error fixing |
 
-> **Anthropic users:** The web search role requires a secondary OpenAI key (`gpt-4o-mini`).  
+> **Anthropic / Gemini users:** The web search role requires a secondary OpenAI key (`gpt-4o-mini`). This is optional — without it the research phase runs without internet search.  
 > You will be asked for this during setup. It is optional but strongly recommended —  
 > without it the research phase cannot search the internet for new ideas.
 

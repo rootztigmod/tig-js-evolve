@@ -387,7 +387,7 @@ class ResearcherAgent:
                         break
                     else:
                         console.print(
-                            f"[bold red]Reflection {ref_idx}: current report is not sufficient because {reflection_result.knowledge_gaps}, generating follow-up queries[/bold red]"
+                            f"  [dim]↻ Reflection {ref_idx}: refining search ({len(reflection_result.knowledge_gaps)} gaps identified)[/dim]"
                         )
                         search_plan = WebSearchPlan(
                             searches=reflection_result.follow_up_queries
@@ -442,8 +442,8 @@ class ResearcherAgent:
             return reflection_plan.final_output_as(ReflectionPlan)
 
         except Exception as e:
-            console.print(f"[bold red]Error in reflection: {e}[/bold red]")
-            console.print(f"[bold red]Reflection input: {reflection_input}[/bold red]")
+            console.print(f"[bold red]✗ Error in reflection: {e}[/bold red]")
+            logger.debug(f"Reflection input: {reflection_input}")
             raise e
         
     async def _perform_searches(self, search_plan: WebSearchPlan) -> list[str]:

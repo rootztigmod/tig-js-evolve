@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import textwrap
 import time
 import uuid
 import json
@@ -46,8 +47,9 @@ from utils.format import format_metrics_safe, format_improvement_safe
 from rich.console import Console
 
 logger = logging.getLogger(__name__)
-httpx_logger = logging.getLogger("httpx")
-httpx_logger.setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+logging.getLogger("litellm").setLevel(logging.WARNING)
 
 class DeepEvolve:
     """
@@ -130,10 +132,11 @@ class DeepEvolve:
         fh.setFormatter(logging.Formatter(file_fmt))
         root.addHandler(fh)
 
-        # Console handler: show module name too
+        # Console handler: INFO in verbose mode, WARNING+ otherwise
         console_fmt = "%(asctime)s - %(module)s:%(lineno)d - %(levelname)s - %(message)s"
         ch = logging.StreamHandler()
         ch.setFormatter(logging.Formatter(console_fmt))
+        ch.setLevel(logging.INFO if os.environ.get("DEEPEVOLVE_VERBOSE") else logging.WARNING)
         root.addHandler(ch)
 
         logger.info(f"Logging to {log_file}")
@@ -295,8 +298,8 @@ class DeepEvolve:
                 blocks = parse_evolve_blocks(program_code)
                 all_blocks.extend(blocks)
             if len(all_blocks) == 0:
-                logger.warning(
-                    f"Iteration {i+1}: No valid diff blocks are found in response, which has two implications: 1. the code is not changed, 2. the code is changed but not strictly following instructions to add valid block markers."
+                logger.debug(
+                    f"Iteration {i+1}: No DEEPEVOLVE-BLOCK markers found (expected for full-file rewrite mode)."
                 )
                 if self.debugging:
                     with open(
@@ -323,6 +326,12 @@ class DeepEvolve:
             child_code = all_program_code[-1]
             child_id = str(uuid.uuid4())
             
+            # Print idea summary before evaluation so user knows what was tried
+            if new_idea and new_idea.description:
+                wrapped = textwrap.fill(new_idea.description, width=90,
+                                        initial_indent="  ", subsequent_indent="  ")
+                self.console.print(f"  [dim]Idea: {wrapped.strip()}[/dim]")
+
             # step 4: evaluation
             self.console.print(f"[yellow]Step 4: Running evaluation...[/yellow]")
             child_metrics, child_code = await self.problem.evaluate(
@@ -619,7 +628,7 @@ class DeepEvolve:
             f"Saved best program to {code_path} with program info to {info_path}"
         )
         if program.id == 'root':
-            logger.warning("The best program is the initial program.")
+            logger.debug("The best program is the initial program.")
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
@@ -627,20 +636,16 @@ def main(config: DictConfig) -> None:
     if "OPENAI_API_KEY" not in os.environ:
         openai_api_key = input("Please enter your OpenAI API key: ")
         os.environ["OPENAI_API_KEY"] = openai_api_key
-        print("OpenAI API key set from user input")
-    else:
-        print("Use the OpenAI API key set from environment variable")
-
-    if "ANTHROPIC_API_KEY" not in os.environ:
-        print("Note: ANTHROPIC_API_KEY not set - Claude models will fail if configured.")
-    else:
-        print("Anthropic API key found in environment")
 
     # Disable OpenAI tracing when using non-OpenAI models to suppress spurious
     # "unknown parameter" errors from LiteLLM usage fields the tracing client
     # doesn't recognise. Safe to disable - tracing is cosmetic only.
-    if "ANTHROPIC_API_KEY" in os.environ:
+    if "ANTHROPIC_API_KEY" in os.environ or "GEMINI_API_KEY" in os.environ:
         os.environ.setdefault("OPENAI_AGENTS_DISABLE_TRACING", "1")
+
+    # Suppress LiteLLM's own verbose print-based logging (unless verbose mode)
+    if not os.environ.get("DEEPEVOLVE_VERBOSE"):
+        os.environ.setdefault("LITELLM_LOG", "ERROR")
 
     root_logger = logging.getLogger()
     for handler in root_logger.handlers[:]:
