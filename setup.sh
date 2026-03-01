@@ -181,37 +181,42 @@ if [ "$provider_choice" = "2" ]; then
     echo ""
     read -rsp "  Enter your Anthropic API key: " ANTHROPIC_API_KEY
     echo ""
+    echo ""
 
     if [ -z "$ANTHROPIC_API_KEY" ]; then
         echo -e "${RED}  Error: Anthropic API key cannot be empty.${NC}"
         exit 1
     fi
-    echo -e "  ${GREEN}Anthropic key received:${NC} $(mask_key "$ANTHROPIC_API_KEY")"
-
+    echo -e "  ${GREEN}Key received:${NC} $(mask_key "$ANTHROPIC_API_KEY")"
     echo ""
+
     echo -e "  ${YELLOW}Note:${NC} The research phase uses gpt-4o-mini (OpenAI) for web search."
     echo "  Providing an OpenAI key enables this (recommended but optional)."
     echo ""
     read -rsp "  Enter OpenAI key (or press Enter to skip web search): " OPENAI_API_KEY
+    echo ""
     echo ""
 
     if [ -z "$OPENAI_API_KEY" ]; then
         echo -e "  ${YELLOW}Web search disabled. Research will run without internet search.${NC}"
         OPENAI_API_KEY="sk-dummy-no-web-search"
     else
-        echo -e "  ${GREEN}OpenAI key received:${NC} $(mask_key "$OPENAI_API_KEY")"
+        echo -e "  ${GREEN}Key received:${NC} $(mask_key "$OPENAI_API_KEY")"
+        echo ""
     fi
 else
     LLM_PROVIDER="openai"
     echo ""
     read -rsp "  Enter your OpenAI API key: " OPENAI_API_KEY
     echo ""
+    echo ""
 
     if [ -z "$OPENAI_API_KEY" ]; then
         echo -e "${RED}  Error: OpenAI API key cannot be empty.${NC}"
         exit 1
     fi
-    echo -e "  ${GREEN}OpenAI key received:${NC} $(mask_key "$OPENAI_API_KEY")"
+    echo -e "  ${GREEN}Key received:${NC} $(mask_key "$OPENAI_API_KEY")"
+    echo ""
 fi
 
 # ─── Write .env ───────────────────────────────────────────────────────────────
