@@ -419,5 +419,7 @@ This project is built on:
 
 ---
 
-*A community tool for TIG algorithm evolution.*
+*A community tool for TIG algorithm evolution.
+Designed by Rootz and Claude Sonnet 4.6*
+
 
