@@ -190,8 +190,9 @@ class DeepEvolve:
                     initial_idea = json.load(f)
                 initial_idea = IdeaData(**initial_idea)
                 self.console.print(
-                    f"[green]Loaded initial idea from cache: {initial_idea}[/green]"
+                    f"[green]Loaded initial idea from cache[/green]"
                 )
+                logger.debug(f"Cached initial idea: {initial_idea}")
             else:
                 self.console.print(
                     f"[yellow]Cache file for the initial idea not found, running researcher...[/yellow]"

@@ -3,19 +3,19 @@
 #
 # Cost principle: cheap models for plumbing, strong models only where quality matters.
 #
-# planner  : gemini/gemini-2.0-flash   - fast structured output, cheap
-# searcher : gpt-4o-mini               - web search tool use (requires OpenAI key)
-# writer   : gemini/gemini-2.5-pro     - novel research idea generation, best quality
-# developer: gemini/gemini-2.5-pro     - multi-file Rust code generation, best quality
-# debugger : gemini/gemini-2.0-flash   - mechanical compile error fixing, cheap
+# planner  : gemini/gemini-2.5-flash  - fast structured output, cheap
+# searcher : gpt-4o-mini              - web search tool use (requires OpenAI key)
+# writer   : gemini/gemini-2.5-pro    - novel research idea generation, best quality
+# developer: gemini/gemini-2.5-pro    - multi-file Rust code generation, best quality
+# debugger : gemini/gemini-2.5-flash  - mechanical compile error fixing, cheap
 
 researcher:
-  planner: "gemini/gemini-2.0-flash"
+  planner: "gemini/gemini-2.5-flash"
   searcher: "gpt-4o-mini"
   writer: "gemini/gemini-2.5-pro"
   reasoning_effort: "high"
 
 coder:
   developer: "gemini/gemini-2.5-pro"
-  debugger: "gemini/gemini-2.0-flash"
+  debugger: "gemini/gemini-2.5-flash"
   reasoning_effort: "high"
