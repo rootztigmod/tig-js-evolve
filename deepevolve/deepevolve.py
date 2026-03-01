@@ -295,8 +295,8 @@ class DeepEvolve:
                 blocks = parse_evolve_blocks(program_code)
                 all_blocks.extend(blocks)
             if len(all_blocks) == 0:
-                logger.warning(
-                    f"Iteration {i+1}: No valid diff blocks are found in response, which has two implications: 1. the code is not changed, 2. the code is changed but not strictly following instructions to add valid block markers."
+                logger.debug(
+                    f"Iteration {i+1}: No DEEPEVOLVE-BLOCK markers found (expected for full-file rewrite mode)."
                 )
                 if self.debugging:
                     with open(

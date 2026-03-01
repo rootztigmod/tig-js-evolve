@@ -396,10 +396,17 @@ class CoderAgent:
             self.trace_id = trace_id
 
         with trace(f"DeepEvolve_{self.problem_name}", trace_id=trace_id, disabled=False):
+            # Only show rust_code.py to the debugger - strip deepevolve_interface.py
+            # so the debugger cannot accidentally modify infrastructure code.
+            _imarker = "# === deepevolve_interface.py ==="
+            if _imarker in input_code:
+                debugger_visible_code = input_code.split(_imarker)[0].rstrip()
+            else:
+                debugger_visible_code = input_code
             debugger_input = DEBUGGER_TEMPLATE.format(
                 # query=self.query,
                 error_message=error_message,
-                modified_code=input_code,
+                modified_code=debugger_visible_code,
                 idea=self.idea.model_dump(),
                 language=self.language,
             )
@@ -409,6 +416,7 @@ class CoderAgent:
             logger.info(f"Debugger changes:\n {result.final_output_as(str)}")
 
             diff_with_text = result.final_output_as(str)
+            # Apply diff to the full input_code so the interface section is preserved
             output_code = apply_diff(input_code, diff_with_text)
             output_code = _sanitise_rust_comments(output_code)
             
@@ -489,6 +497,13 @@ class CoderAgent:
                 # Truncate query for the coder to save context tokens - the researcher
                 # has already distilled the key idea into pseudocode and description.
                 coder_query = self.query[:800] if self.query and len(self.query) > 800 else self.query
+                # Only show rust_code.py to the LLM - strip deepevolve_interface.py
+                # so the LLM cannot accidentally modify infrastructure code.
+                interface_marker = "# === deepevolve_interface.py ==="
+                if interface_marker in program_code:
+                    llm_visible_code = program_code.split(interface_marker)[0].rstrip()
+                else:
+                    llm_visible_code = program_code
                 code_prompt = DIFF_CODE_TEMPLATE.format(
                     query=coder_query,
                     problem=self.problem_description,
@@ -499,7 +514,7 @@ class CoderAgent:
                     implementation_notes=new_idea.implementation_notes,
                     language=self.language,
                     current_performance=current_performance,
-                    current_program=program_code,
+                    current_program=llm_visible_code,
                 )
 
                 if ref_idx > 0:
@@ -551,8 +566,7 @@ class CoderAgent:
                 
                 try:
                     program_code = format_str(program_code, mode=Mode())
-                except Exception as e:
-                    logger.warning(f"Error when formatting code: {e}")
+                except Exception:
                     pass
 
                 all_diff_text.append(diff_with_text)
