@@ -1,0 +1,21 @@
+# @package _global_
+# Anthropic Claude preset for tig-js-evolve
+#
+# Cost principle: cheap models for plumbing, strong models only where quality matters.
+#
+# planner  : claude-haiku-4-5-20251001 - short structured output, cheap
+# searcher : gpt-4o-mini               - web search tool use (requires OpenAI key)
+# writer   : claude-sonnet-4-6         - novel research idea generation, best quality
+# developer: claude-sonnet-4-6         - multi-file Rust code generation, best quality
+# debugger : claude-haiku-4-5-20251001 - mechanical compile error fixing, cheap
+
+researcher:
+  planner: "claude-haiku-4-5-20251001"
+  searcher: "gpt-4o-mini"
+  writer: "claude-sonnet-4-6"
+  reasoning_effort: "high"
+
+coder:
+  developer: "claude-sonnet-4-6"
+  debugger: "claude-haiku-4-5-20251001"
+  reasoning_effort: "high"

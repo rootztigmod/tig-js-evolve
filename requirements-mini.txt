@@ -1,0 +1,10 @@
+openai-agents
+litellm
+rich
+GitPython
+PyYAML
+black
+rapidfuzz
+hydra-core
+omegaconf
+python-dotenv

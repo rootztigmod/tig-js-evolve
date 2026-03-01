@@ -1,0 +1,22 @@
+# API keys - NEVER commit this
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# DeepEvolve run outputs (generated at runtime, not part of the repo)
+deepevolve/examples/
+deepevolve/deepevolve.log
+deepevolve/discoveries/
+
+# Personal backups of evolved algorithms
+backups/
+
+# OS
+.DS_Store
+Thumbs.db
