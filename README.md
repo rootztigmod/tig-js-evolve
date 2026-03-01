@@ -126,6 +126,14 @@ conda activate deepevolve
 python run.py
 ```
 
+Add `--verbose` to see full internal logging (LLM calls, database updates, island status):
+
+```bash
+python run.py --verbose
+```
+
+Without `--verbose`, only the evaluation scoreboard and key step indicators are shown. Full logs are always written to `deepevolve/examples/<run_name>/logs/` regardless.
+
 ### First run — full menu
 
 ```
