@@ -81,14 +81,17 @@ job_scheduling/
     └── ...
 ```
 
-> **Track vs module detection:** The launcher automatically identifies track-specific files  
-> by name. Files named `flow_shop.rs`, `hybrid_flow_shop.rs`, `job_shop.rs`, `fjsp_medium.rs`  
-> or `fjsp_high.rs` are treated as track files and offered individually for single-track evolution.  
+> **Track vs module detection:** The launcher looks for files whose names exactly match the five  
+> known TIG track IDs: `flow_shop.rs`, `hybrid_flow_shop.rs`, `job_shop.rs`, `fjsp_medium.rs`,  
+> `fjsp_high.rs`. If any of these are found they are listed as track-specific files for  
+> single-track evolution.  
 >  
-> All other `.rs` files (e.g. `infra.rs`, `types.rs`, `solver.rs`) are shared module files.  
-> These **can** be individually selected for evolution, but with caution:  
-> - Shared modules affect **all tracks simultaneously** — a change to `infra.rs` impacts every track  
-> - `mod.rs` is structural and is excluded from the file list automatically
+> **This detection is name-based.** If your algorithm uses different filenames (e.g. `solver.rs`  
+> containing all track logic, or `track1.rs`), none will be detected as track files. In that case  
+> the launcher skips the track/module split and lists all `.rs` files as module files — every file  
+> is assumed to affect all tracks simultaneously.  
+>  
+> `mod.rs` is always excluded from the file list regardless of naming.
 
 ---
 
