@@ -1,0 +1,23 @@
+# @package _global_
+# OpenAI GPT preset for tig-js-evolve
+#
+# Cost principle: cheap models for plumbing, strong models only where quality matters.
+#
+# planner  : gpt-4o-mini - short structured output, cheap
+# searcher : gpt-4o-mini - web search tool use, cheap
+# writer   : gpt-4o      - novel research idea generation, best quality
+# developer: gpt-4o      - multi-file Rust code generation, best quality
+# debugger : gpt-4o-mini - mechanical compile error fixing, cheap
+#
+# NOTE: gpt-4o can be upgraded to gpt-5.2 for writer/developer if higher quality is needed.
+
+researcher:
+  planner: "gpt-4o-mini"
+  searcher: "gpt-4o-mini"
+  writer: "gpt-4o"
+  reasoning_effort: "high"
+
+coder:
+  developer: "gpt-4o"
+  debugger: "gpt-4o-mini"
+  reasoning_effort: "high"
