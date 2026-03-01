@@ -735,6 +735,17 @@ def main():
         if meta_file.exists():
             params = json.loads(meta_file.read_text())
             print(c(GREEN, f"  Resuming: {problem_name}"))
+            # Check if the run has already reached its iteration limit
+            ckpt_dir = DEEPEVOLVE_DIR / "examples" / problem_name / "ckpt"
+            existing_ckpts = sorted(ckpt_dir.glob("checkpoint_*"), key=lambda p: p.name) if ckpt_dir.exists() else []
+            current_iter = int(existing_ckpts[-1].name.split("_")[-1]) if existing_ckpts else 0
+            max_iters = params.get("max_iterations", 0)
+            if current_iter >= max_iters:
+                print(c(YELLOW, f"\n  This run completed all {max_iters} iteration(s)."))
+                extra = prompt_int("How many more iterations to run?", default=5, min_val=1, max_val=500)
+                params["max_iterations"] = max_iters + extra
+                meta_file.write_text(json.dumps(params, indent=2))
+                print(c(GREEN, f"  Extended to {params['max_iterations']} total iterations."))
         else:
             print(c(YELLOW, "  Run metadata not found - starting fresh."))
             resume = False
