@@ -391,6 +391,11 @@ Check the diagnostic line:
 - `INFO: RUST_CODE line count unchanged` — the LLM made no change, or the change was reverted
 
 ---
+## TO DO
+
+Add Google Gemini support
+
+---
 
 ## Acknowledgements
 
@@ -415,3 +420,4 @@ This project is built on:
 ---
 
 *A community tool for TIG algorithm evolution.*
+
